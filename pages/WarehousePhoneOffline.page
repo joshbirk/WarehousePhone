@@ -1,0 +1,168 @@
+<apex:page standardStylesheets="false" showHeader="false" sidebar="false" controller="MobileInventoryExtension" doctype="html-5.0">
+<!--
+	<script src="http://debug.phonegap.com/target/target-script-min.js#kerala"></script>
+-->
+<apex:stylesheet value="{!URLFOR($Resource.jQuery, 'jquery/jquery.mobile-1.1.0.min.css')}" />
+<apex:includeScript value="{!URLFOR($Resource.jQuery, 'jquery/jquery-1.7.2.min.js')}"/>
+<apex:includeScript value="{!URLFOR($Resource.jQuery, 'jquery/jquery.mobile-1.1.0.min.js')}"/>
+<apex:includeScript value="{!$Resource.Cordova}"/>
+<apex:includeScript value="{!$Resource.SFHybridApp}"/>
+<apex:includeScript value="{!$Resource.SFSmartstorePlugin}"/>
+
+
+<body>
+	<div data-role="page" data-theme="b" id="mainpage">
+	   <div data-role="header">
+  	        <input type="search" name="search-mini" id="search" value="" data-mini="true" />
+			<h1>Inventory</h1>
+	   </div>
+	   <div data-role="content">	
+	<ul id="mechandise" data-inset="true" data-role="listview" data-theme="c" data-dividertheme="c">
+	      </ul>
+	   </div>
+	</div>  
+	
+	<div data-role="page" data-theme="b" id="detailpage">
+	   <div data-role="header">
+	      <a href='#mainpage' id="backInventory" class='ui-btn-left' data-icon='arrow-l'>Inventory</a>
+	      <h1><span id="Name"></span></h1>
+	   </div>
+	   <div data-role="content">
+	       <strong>Price:</strong><span id="Price__c"></span><br />
+	       <strong>Description:</strong><BR />
+	       <span id="Description__c"></span>
+	       <p><strong>Total Inventory:</strong><input type="text" id="Total_Inventory__c" value="" /></p>
+	       <button id="update" data-id="" class="updateBtn">Update</button>
+	   	   <div style="margin-left:auto;
+					  margin-right:auto;
+					  width:70%;">
+			<image id="prodImageBtn" src="{!URLFOR($Resource.glyphish, '86-camera.png')}" style="float: left; width: 200px; height: 200px; border: 1px solid #999; margin-right: 10px;" />
+      	   </div>
+	   </div>
+	</div>
+</body>
+
+<script>
+    j$ = jQuery.noConflict();
+    merchandises = new Array();
+	MERCHANDISE_SOUP = 'merchandise',
+	indexes = [
+		{path:"Name",type:"string"},
+		{path:"Id",type:"string"}
+        ];
+	hybrid = cordova.require("salesforce/util/logger");
+	smartstore = cordova.require("salesforce/plugin/smartstore");
+	
+    j$(document).ready(function() {
+	        //Add event listeners and so forth here
+	        SFHybridApp.logToConsole("onLoad: jquery ready");
+			document.addEventListener("deviceready", onDeviceReady,false);
+
+	    });
+
+	 // When this function is called, Cordova has been initialized and is ready to roll 
+	 function onDeviceReady() {
+		navigator.smartstore.removeSoup(MERCHANDISE_SOUP);
+		navigator.smartstore.registerSoup(MERCHANDISE_SOUP,indexes,	
+			function() {
+				SFHybridApp.logToConsole("Soup Success");
+				MobileInventoryExtension.queryMerchandise(function(records, e) { 
+					    console.log(records.length);
+						navigator.smartstore.upsertSoupEntries(MERCHANDISE_SOUP, records, function(){
+						                                               SFHybridApp.logToConsole("Soup Upsert Success");        
+						                                               }, function(){
+																	   SFHybridApp.logToConsole("Soup Upsert Fail");}     
+																	); 
+						render(records);
+		    			console.log('upserted and rendered');
+			        });
+				
+				        
+            }, function(){
+			    SFHybridApp.logToConsole("Soup Fail");
+				MobileInventoryExtension.queryMerchandise(function(records, e) { 
+					    render(records);
+		    			console.log('rendered');
+			        });
+			}     
+			);
+		 
+	    
+        //event handler for update button
+        j$(".updateBtn").click(function() {
+             var id = j$(this).attr('data-id');
+             var inventory = parseInt(j$("#Total_Inventory__c").val());
+             j$.mobile.showPageLoadingMsg();
+             MobileInventoryExtension.updateMerchandiseItem(id,inventory,handleUpdate);
+         });
+         
+         j$("#prodImageBtn").click(function() {
+		    console.log('image cap started');
+         	navigator.camera.getPicture(onPhotoDataSuccess, onFail, { quality: 25, destinationType : Camera.DestinationType.DATA_URL });
+         });
+
+
+		j$("#search").blur(function() {
+			console.log("In Change");
+			console.log(j$(this).val());
+			if(j$(this).val().length < 3) { return; }
+			var querySpec = navigator.smartstore.buildLikeQuerySpec("Name", "%"+j$(this).val()+"%", null, 20);
+			navigator.smartstore.querySoup(MERCHANDISE_SOUP,querySpec, function(cursor) { 
+					records = cursor.currentPageOrderedEntries;
+					console.log(records.length);
+					navigator.smartstore.closeCursor(cursor);
+					render(records);
+			    },error);
+		});
+    };
+
+	//our document is loaded, render the interface
+    function render(records) {
+        j$('#mechandise').empty();
+		j$.each(records,
+            function() {
+               merchandises[this.Id] = this; 
+               j$('#mechandise').append(
+                  '<li id="' + this.Id + '">' + 
+                       '<h3>' + this.Name + '</h3>' +
+                       '<p>$' + this.Price__c + '</p>' + 
+                  '</li>'
+               );
+            });
+        
+        j$('#mechandise').listview('refresh')
+        .find('li').click(function(e) {
+           var merchandise = merchandises[this.id];
+           j$('#Name').text(merchandise.Name);
+           j$('#Price__c').text(merchandise.Price__c);
+           j$('#Description__c').text(merchandise.Description__c);
+           j$('#Total_Inventory__c').val(merchandise.Quantity__c);
+           j$('#update.updateBtn').attr('data-id', merchandise.Id);
+           j$.mobile.changePage('#detailpage', {changeHash: true});
+        });
+    }
+     
+    function handleUpdate(result,event) {
+        alert(result);
+        if(result == 'Item Updated') { dataChanged = true; }
+        j$.mobile.hidePageLoadingMsg();
+    }
+    
+    function onPhotoDataSuccess(imageData) {
+      document.getElementById('prodImageBtn').style.opacity = 0.1;
+	  console.log(imageData);
+	  MobileInventoryExtension.saveImage(imageData, j$('#update').attr('data-id'), j$('#Name').text(), 
+			function(res,event){ 		
+				document.getElementById('prodImageBtn').style.opacity = 1; 
+    			console.log(res);
+			});
+      document.getElementById('prodImageBtn').src = "data:image/jpeg;base64," + imageData;
+	  
+    }
+    
+    function onFail(message) {
+    	console.log(message);
+    }
+</script>
+<!-- </html> -->
+</apex:page>
